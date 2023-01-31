@@ -1,4 +1,3 @@
-
 import math
 from pandas_datareader import data as pdr
 import numpy as np
@@ -9,11 +8,10 @@ from keras.layers import Dense, LSTM
 import yfinance as yfin
 import plotly.graph_objs as go
 import matplotlib.pyplot as plt
-import os
 plt.style.use('fivethirtyeight')
-import pickle
-import streamlit as st
-
+import tensorflow as tf
+from google.colab import drive
+drive.mount('/content/drive')
 def fetchdata(ticker):
   yfin.pdr_override()
   df = pdr.get_data_yahoo(ticker,start='2012-01-01')
@@ -73,7 +71,7 @@ def preprocess(df):
   #Reshape the data
   x_test = np.reshape(x_test, (x_test.shape[0],x_test.shape[1],1))
 
-  return scaler
+  return x_train,y_train,x_test,y_test,scaler
 
 def modelinitaliser(x_train):
   model = Sequential()
@@ -111,8 +109,9 @@ def plotpredictions(data,training_data_len,predictions):
   plt.legend(['Train','Validation','Predictions'],loc='lower right')
   plt.show()
 
-def nextdatprediction(quote,scaler,model):
+def nextdatprediction(ticker,scaler,model):
   #Get the quote
+  quote = pdr.get_data_yahoo(ticker,start='2012-01-01')
   new_df = quote.filter(['Close'])
   #Get the last 60 day closing values and convert the dataframe to an array
   last_60_days = new_df[-60:].values
@@ -134,27 +133,39 @@ def nextdatprediction(quote,scaler,model):
 
 def exporter(name,model):
   filename = name+'.sav'
-  pickle.dump(model,open(filename,'wb'))
+  localhost_save_option = tf.saved_model.SaveOptions(experimental_io_device="/job:localhost")
+  model.save(filename, options=localhost_save_option)
 
-c=1
-
-os.chdir(r"C:\Users\tanay\Downloads\stockprice\models")
-df_stock = pd.read_csv('nse.csv')
-df_stock['BSE SYMBOL'] = df_stock['BSE SYMBOL'].astype(str)
-df_stock['BSE SYMBOL']=df_stock['BSE SYMBOL'].str[:-3]+'.sav'
-l = os.listdir()
-for i in range(len(df_stock['BSE SYMBOL'])):
+def main():
+  df_stock = pd.read_csv('/content/drive/MyDrive/nse.csv')
+  for i in range(1):
     try:
-        if df_stock['BSE SYMBOL'][i] in l:
-          print(df_stock['Company Name'][i]," : ",df_stock['BSE SYMBOL'][i][:-4])
-          model = pickle.load(open(df_stock['BSE SYMBOL'][i],'rb'))
-          ticker = df_stock['BSE SYMBOL'][i][:-4]+'.NS'
-          pricelist = fetchdata(df_stock['BSE SYMBOL'][i][:-4]+'.NS')
-          scaler=preprocess(pricelist)
-          res = nextdatprediction(pricelist,scaler,model)
-          print('Ticker: ',ticker,'Prediction for Tomorrow: Rs.',res[0][0])
+      pricelist = fetchdata(df_stock['BSE SYMBOL'][i])
+      x_train,y_train,x_test,y_test,scaler=preprocess(pricelist)
+      print("Training: ",df_stock['Company Name'][i])
+      print("Epoch 1")
+      model = modelinitaliser(x_train)
+      model = modeltrainer(x_train,y_train,model)
+      rmse = modeltester(x_test,y_test,model,scaler)
+      print("Current Epoch RMSE: ",rmse)
+      k=2
+      while rmse>10:
+        print("Epoch ",k)
+        model = modeltrainer(x_train,y_train,model)
+        rmse = modeltester(x_test,y_test,model,scaler)
+        if k>20 and rmse<30:
+          print("Current Epoch RMSE: ",rmse)
+          break
+        k+=1
+        print("Current Epoch RMSE: ",rmse)
+      print("Final RMSE is: ",rmse)
+      symbol = str(df_stock['BSE SYMBOL'][i])
+      symbol = symbol[:-3]
+      exporter('/content/drive/MyDrive/models/'+symbol,model)
     except:
       continue
+
+main()
 
 
 
