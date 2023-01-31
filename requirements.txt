@@ -1,0 +1,11 @@
+keras==2.9.0
+matplotlib==3.3.4
+numpy==1.22.0
+pandas==1.5.3
+pandas_datareader==0.10.0
+plotly==5.11.0
+scikit_learn==1.2.1
+streamlit==1.15.1
+tensorflow==2.11.0
+tensorflow_intel==2.11.0
+yfinance==0.2.9
