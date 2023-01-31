@@ -1,3 +1,4 @@
+
 import math
 from pandas_datareader import data as pdr
 import numpy as np
@@ -7,10 +8,12 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM  
 import yfinance as yfin
 import plotly.graph_objs as go
+import matplotlib.pyplot as plt
 import os
+plt.style.use('fivethirtyeight')
 import pickle
 import streamlit as st
-os.chdir(r'models')
+
 def fetchdata(ticker):
   yfin.pdr_override()
   df = pdr.get_data_yahoo(ticker,start='2012-01-01')
@@ -20,7 +23,8 @@ def stockvisualiser(df,name):
   fig = go.Figure()
   fig.add_trace(go.Candlestick(x=df.index,open=df['Open'],high=df['High'],low=df['Low'],close=df['Close'],name='market data'))
   fig.update_layout(title=name,yaxis_title='Stock Price (INR Per Share')
-  st.plotly_chart(fig)
+  fig.show()
+
 
 
 def preprocess(df):
@@ -71,6 +75,42 @@ def preprocess(df):
 
   return scaler
 
+def modelinitaliser(x_train):
+  model = Sequential()
+  model.add(LSTM(50, return_sequences=True, input_shape=(x_train.shape[1],1)))
+  model.add(LSTM(50, return_sequences=False))
+  model.add(Dense(25))
+  model.add(Dense(1))
+  return model
+
+def modeltrainer(x_train,y_train,model):
+  #Compile the model
+  model.compile(optimizer='adam',loss='mean_squared_error')
+  #Train
+  model.fit(x_train,y_train, batch_size=1, epochs=1)
+  return model
+
+def modeltester(x_test,y_test,model,scaler):
+  predictions = model.predict(x_test)
+  predictions = scaler.inverse_transform(predictions)
+  rmse = np.sqrt(np.mean(predictions-y_test)**2)
+  return rmse
+
+def plotpredictions(data,training_data_len,predictions):
+  #Plot the data
+  train = data[:training_data_len]
+  validation = data[training_data_len: ]
+  validation['Predictions'] = predictions
+  #Visualise
+  plt.figure(figsize=(16,8))
+  plt.title('Model')
+  plt.xlabel('Data',fontsize=18)
+  plt.ylabel('Close Price Rupees',fontsize=18)
+  plt.plot(train['Close'])
+  plt.plot(validation[['Close','Predictions']])
+  plt.legend(['Train','Validation','Predictions'],loc='lower right')
+  plt.show()
+
 def nextdatprediction(quote,scaler,model):
   #Get the quote
   new_df = quote.filter(['Close'])
@@ -92,18 +132,29 @@ def nextdatprediction(quote,scaler,model):
   pred_price = scaler.inverse_transform(pred_price)
   return pred_price
 
-df = pd.read_csv('nse_final.csv')
-st.title("NSE Stock Price Predictor")
-l=[]
-d={}
-val = st.selectbox("Select Stock",tuple(df['Company Name']))
-for i in range(len(df)):
-    d[df['Company Name'][i]] = df['Model'][i]
-path = d[val]
-model=pickle.load(open(path,'rb'))
-ticker=d[val][:-4]
-pricelist=fetchdata(ticker+'.NS')
-scaler=preprocess(pricelist)
-res = nextdatprediction(pricelist,scaler,model)
-stockvisualiser(pricelist, val)
-st.header("Prediction for "+ticker+" / "+val+" is "+res)
+def exporter(name,model):
+  filename = name+'.sav'
+  pickle.dump(model,open(filename,'wb'))
+
+c=1
+
+os.chdir(r"C:\Users\tanay\Downloads\stockprice\models")
+df_stock = pd.read_csv('nse.csv')
+df_stock['BSE SYMBOL'] = df_stock['BSE SYMBOL'].astype(str)
+df_stock['BSE SYMBOL']=df_stock['BSE SYMBOL'].str[:-3]+'.sav'
+l = os.listdir()
+for i in range(len(df_stock['BSE SYMBOL'])):
+    try:
+        if df_stock['BSE SYMBOL'][i] in l:
+          print(df_stock['Company Name'][i]," : ",df_stock['BSE SYMBOL'][i][:-4])
+          model = pickle.load(open(df_stock['BSE SYMBOL'][i],'rb'))
+          ticker = df_stock['BSE SYMBOL'][i][:-4]+'.NS'
+          pricelist = fetchdata(df_stock['BSE SYMBOL'][i][:-4]+'.NS')
+          scaler=preprocess(pricelist)
+          res = nextdatprediction(pricelist,scaler,model)
+          print('Ticker: ',ticker,'Prediction for Tomorrow: Rs.',res[0][0])
+    except:
+      continue
+
+
+
